@@ -6,12 +6,13 @@ import ProductItem from './ProductItem';
 const BestSeller = () => {
   const { products } = useContext(ShopContext);
 
-  const [bestSeller, setBestSeller] = useState([]);
+  const [bestseller, setBestSeller] = useState([]);
 
   useEffect(() => {
     if (!products) return;
 
-    const bestProduct = products.filter(item => item.bestSeller);
+    const bestProduct = products.filter(item => item.bestseller);
+    // eslint-disable-next-line react-hooks/set-state-in-effect
     setBestSeller(bestProduct.slice(0, 5));
   }, [products]);
 
@@ -28,7 +29,7 @@ const BestSeller = () => {
 
       {/* Products Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 gap-5 gap-y-6">
-        {bestSeller.map((item,index) => (
+        {bestseller.map((item,index) => (
           <ProductItem
             key={index}
             id={item._id}
