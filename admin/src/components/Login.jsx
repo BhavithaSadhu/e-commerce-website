@@ -19,17 +19,14 @@ const Login = () => {
       console.log("LOGIN RESPONSE:", response.data);
 
       if (response.data.success) {
-        // ✅ STORE ADMIN TOKEN SEPARATELY
         localStorage.setItem("adminToken", response.data.token);
-
         toast.success("Admin Login Successful");
-        // optionally redirect to admin dashboard here
       } else {
         toast.error(response.data.message);
       }
     } catch (error) {
       console.log(error);
-      toast.error(error.message);
+      toast.error(error.response?.data?.message || "Login failed");
     }
   };
 
@@ -38,7 +35,8 @@ const Login = () => {
       <div className='bg-white shadow-md rounded-lg px-8 py-6 max-w-md'>
         <h1 className='text-2xl font-bold mb-2'>Admin Panel</h1>
 
-        <form onSubmit={onSubmitHandler}>
+        {/* ❌ removed onSubmit */}
+        <form>
           <div className='mb-3 min-w-72'>
             <p className='text-sm font-medium text-gray-700 mb-2'>Email Address</p>
             <input
@@ -63,9 +61,11 @@ const Login = () => {
             />
           </div>
 
+          {/* ✅ explicit click handler */}
           <button
-            className='mt-2 w-full py-2 px-4 rounded-md text-white bg-black'
-            type='submit'
+            type="button"
+            onClick={onSubmitHandler}
+            className='mt-2 w-full py-2 px-4 rounded-md text-white bg-black cursor-pointer'
           >
             Login
           </button>
