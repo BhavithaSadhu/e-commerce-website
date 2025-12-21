@@ -1,76 +1,21 @@
-import orderModel from "../models/OrderModel.js"
-import userModel from "../models/userModel.js";
-import productModel from "../models/productModel.js";
-import razorpay from 'razorpay'
-//using cod
+import Order from "../models/OrderModel.js";
+import User from "../models/userModel.js";
+import Product from "../models/productModel.js";
+import Razorpay from "razorpay";
+import crypto from "crypto";
 
-const currency='inr'
-const deliveryCharge=10
+const currency = "INR";
 
-const razorpayInstance = new razorpay({
-  key_id:process.env.RAZORPAY_KEY_ID,
-  key_secret : process.env.RAZORPAY_KEY_SECRET,
-})
-const placeOrder = async (req, res) => {
+/* ---------------- COD ---------------- */
+export const placeOrder = async (req, res) => {
   try {
-    const { userId, items, amount, address } = req.body;
+    const userId = req.user.id;
+    const { items, amount, address } = req.body;
 
-    let orderItems = [];
+    const orderItems = [];
 
     for (const item of items) {
-      const product = await productModel.findById(item._id);
-
-      if (!product) continue;
-
-      orderItems.push({
-        productId: product._id,
-        name: product.name,
-        price: product.price,
-        quantity: item.quantity,
-        size: item.size,
-        image: product.image   // ✅ IMAGE STORED HERE
-      });
-    }
-
-    const orderData = {
-      userId,
-      items: orderItems,
-      address,
-      amount,
-      paymentMethod: "COD",
-      payment: false,
-      date: Date.now()
-    };
-
-    const newOrder = new orderModel(orderData);
-    await newOrder.save();
-
-    await userModel.findByIdAndUpdate(userId, { cartData: {} });
-
-    res.json({ success: true, message: "Order Placed" });
-
-  } catch (error) {
-    console.log(error);
-    res.json({ success: false, message: error.message });
-  }
-};
-
-//using razor pay
-const placeOrderStripe = async(req,res) =>{
-  
-
-}
-
-//using stripe pay
-const placeOrderRazorpay = async (req, res) => {
-  try {
-    const { userId, items, amount, address } = req.body;
-
-    // 🔥 BUILD ITEMS (SAME AS COD)
-    let orderItems = [];
-
-    for (const item of items) {
-      const product = await productModel.findById(item._id);
+      const product = await Product.findById(item._id);
       if (!product) continue;
 
       orderItems.push({
@@ -83,10 +28,54 @@ const placeOrderRazorpay = async (req, res) => {
       });
     }
 
-    // 🔥 SAVE ITEMS IN DB
-    const newOrder = new orderModel({
+    const order = await Order.create({
       userId,
-      items: orderItems,        // ✅ THIS WAS MISSING
+      items: orderItems,
+      address,
+      amount,
+      paymentMethod: "COD",
+      payment: false,
+      date: Date.now(),
+    });
+
+    await User.findByIdAndUpdate(userId, { cartData: {} });
+
+    res.json({ success: true, order });
+  } catch (error) {
+    res.status(500).json({ success: false, message: error.message });
+  }
+};
+
+/* ---------------- RAZORPAY ---------------- */
+export const placeOrderRazorpay = async (req, res) => {
+  try {
+    const userId = req.user.id;
+    const { items, amount, address } = req.body;
+
+    // 🔥 INIT RAZORPAY ONLY HERE
+    const razorpay = new Razorpay({
+      key_id: process.env.RAZORPAY_KEY_ID,
+      key_secret: process.env.RAZORPAY_KEY_SECRET,
+    });
+
+    const orderItems = [];
+    for (const item of items) {
+      const product = await Product.findById(item._id);
+      if (!product) continue;
+
+      orderItems.push({
+        productId: product._id,
+        name: product.name,
+        price: product.price,
+        quantity: item.quantity,
+        size: item.size,
+        image: product.image,
+      });
+    }
+
+    const newOrder = await Order.create({
+      userId,
+      items: orderItems,
       address,
       amount,
       paymentMethod: "Razorpay",
@@ -94,96 +83,39 @@ const placeOrderRazorpay = async (req, res) => {
       date: Date.now(),
     });
 
-    await newOrder.save();
-
-    // 🔥 CREATE RAZORPAY ORDER
-    const options = {
+    const razorOrder = await razorpay.orders.create({
       amount: amount * 100,
-      currency: currency.toUpperCase(),
+      currency,
       receipt: newOrder._id.toString(),
-    };
-
-    const razorOrder = await razorpayInstance.orders.create(options);
+    });
 
     res.json({ success: true, order: razorOrder });
-
   } catch (error) {
-    console.log(error);
-    res.json({ success: false, message: error.message });
+    console.error("Razorpay error:", error);
+    res.status(500).json({ success: false, message: "Failed to create Razorpay order" });
   }
 };
 
-
-const verifyRazorpay = async(req,res)=>{
+/* ---------------- VERIFY RAZORPAY ---------------- */
+export const verifyRazorpay = async (req, res) => {
   try {
-    const {razorpay_order_id, userId} = req.body;
-    const orderInfo = await razorpayInstance.orders.fetch(razorpay_order_id)
-    if(orderInfo.status === 'paid'){
-      await orderModel.findByIdAndUpdate(orderInfo.receipt,{payment:true});
-      
-      await userModel.findByIdAndUpdate(userId,{cartData:{}})
-      res.json({success:true,message:"Payment Successful"})
-    }else{
-      res.json({success:false,message:"Payment Failed"})
-    }
-  } catch (error) {
-    console.log(error)
-    res.json({success:false,message:error.message})
-    
-  }
+    const { razorpay_order_id, razorpay_payment_id, razorpay_signature } = req.body;
 
-}
+    const body = razorpay_order_id + "|" + razorpay_payment_id;
+    const expectedSignature = crypto
+      .createHmac("sha256", process.env.RAZORPAY_KEY_SECRET)
+      .update(body)
+      .digest("hex");
 
-// all orders for admin panel
-
-//using razor pay
-const allOrders = async(req,res) =>{
-  try {
-    const orders = await orderModel.find({})
-    res.json({success:true,orders})  
-    
-  } catch (error) {
-    console.log(error)
-    res.json({success:false,message:error.message})
-    
-  }
-
-}
-
-//user order data for front end
-//using razor pay
-const userOrders = async(req,res) =>{
-    try {
-
-        const {userId} = req.body;
-
-
-        const orders = await orderModel.find({userId})
-        res.json({success:true,orders})
-
-        
-    } catch (error) {
-        console.log(error)
-        res.json({success:false,message:error.message})
-        
+    if (expectedSignature !== razorpay_signature) {
+      return res.json({ success: false, message: "Invalid signature" });
     }
 
-} 
+    await Order.findByIdAndUpdate(req.body.receipt, { payment: true });
+    await User.findByIdAndUpdate(req.user.id, { cartData: {} });
 
-
-//update status from admin panel
-
-const updateStatus = async(req,res) =>{
-  try {
-    const {orderId,status} = req.body
-    await orderModel.findByIdAndUpdate(orderId,{status})
-    res.json({success:true,message:"Status Updated"})
+    res.json({ success: true, message: "Payment verified" });
   } catch (error) {
-    console.log(error)
-    res.json({success:false,message:error.message})
-    
+    res.status(500).json({ success: false, message: error.message });
   }
-
-}
-
-export {verifyRazorpay,placeOrder,placeOrderRazorpay,placeOrderStripe,allOrders,userOrders,updateStatus}
+};
