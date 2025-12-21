@@ -1,3 +1,5 @@
+console.log("🔥 NEW ORDER CONTROLLER LOADED 🔥");
+
 import Order from "../models/OrderModel.js";
 import User from "../models/userModel.js";
 import Product from "../models/productModel.js";
